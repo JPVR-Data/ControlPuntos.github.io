@@ -6,33 +6,25 @@
   <title>Escanear DNI - Nuna Orgánica</title>
   <meta name="robots" content="noindex">
   <style>
-    :root{
-      --nuna-yellow: #f4b844;
-      --black:#111;
-      --bg:#fff8ec;
-      --card:#fff;
-      --muted:#555;
-    }
+    :root{--nuna-yellow:#f4b844;--black:#111;--bg:#fff8ec;--card:#fff;--muted:#555}
     *{box-sizing:border-box}
-    body{font-family:Inter, Arial, Helvetica, sans-serif;background:var(--bg);margin:0;padding:20px;color:var(--black)}
+    body{font-family:Inter,Arial,Helvetica,sans-serif;background:var(--bg);margin:0;padding:20px;color:var(--black)}
     .wrap{max-width:860px;margin:0 auto}
     .card{background:var(--card);padding:22px;border-radius:12px;box-shadow:0 8px 30px rgba(10,20,30,0.06)}
     header{display:flex;gap:16px;align-items:center;margin-bottom:12px}
     .logo{width:64px;height:64px;border-radius:12px;background:linear-gradient(135deg,var(--nuna-yellow),#eaa936);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:20px;box-shadow:0 6px 18px rgba(0,0,0,0.08)}
-    h1{margin:0;font-size:20px}
-    .subtitle{color:var(--muted);font-size:13px;margin-top:4px}
     .controls{display:flex;gap:12px;align-items:center;margin-top:10px}
-    select, .small-input{padding:10px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px}
+    select,.small-input{padding:10px 12px;border-radius:8px;border:1px solid #ddd;font-size:14px}
     .status{margin-top:16px;padding:12px;border-radius:10px;background:#f0f4f7;color:var(--black)}
     .ok{background:#e7fbe9;color:#0a6b2f}
     .err{background:#fff0f0;color:#8b1e1e}
     .info{color:var(--muted);font-size:13px;margin-top:8px}
     .hidden{position:absolute;left:-9999px}
     .last{margin-top:12px;font-size:13px;color:#444}
-    .label{font-weight:600;margin-right:8px}
-    .row{display:flex;gap:12px;align-items:center;margin-top:8px}
-    .busy {opacity:0.6;pointer-events:none}
+    .label{font-weight:600}
+    .busy{opacity:.6;pointer-events:none}
     @media(max-width:640px){.controls{flex-direction:column;align-items:stretch}}
+    .small-note{font-size:12px;color:#666;margin-top:8px}
   </style>
 </head>
 <body>
@@ -42,19 +34,21 @@
         <div class="logo">NU</div>
         <div>
           <h1>Nuna Orgánica — Escaneo DNI</h1>
-          <div class="subtitle">Selecciona la sucursal y luego escanee el DNI con el lector (el lector debe enviar <strong>ENTER</strong>).</div>
+          <div class="subtitle" style="color:var(--muted);font-size:13px;margin-top:4px">
+            Selecciona la sucursal y luego escanea con el lector (el lector debe enviar <strong>ENTER</strong>).
+          </div>
         </div>
       </header>
 
-      <!-- CONTROLES -->
       <div class="controls">
         <div>
           <div class="label">Sucursal</div>
           <select id="sucursalSelect" aria-label="Seleccionar sucursal">
             <option value="">-- Seleccionar sucursal --</option>
             <option value="Los Olivos">Los Olivos</option>
-            <option value="Miraflores">Miraflores</option>
-            <option value="San Isidro">San Isidro</option>
+            <option value="Comas">Comas</option>
+            <option value="SMP">SMP</option>
+            <option value="SJL">SJL</option>
             <option value="Otra">Otra (escribir)</option>
           </select>
         </div>
@@ -66,27 +60,24 @@
       </div>
 
       <div class="info">Nota: hasta que no selecciones la sucursal, los escaneos serán ignorados.</div>
+      <div class="small-note">Si quieres probar sin lector: selecciona sucursal, escribe el DNI en cualquier campo (o pega) y pulsa ENTER.</div>
 
-      <!-- Campo oculto que recibirá el foco (muchos lectores envían directamente al elemento con foco) -->
+      <!-- campo invisible para recibir foco cuando corresponde -->
       <input id="focusField" class="hidden" autocomplete="off" aria-hidden="true" />
 
       <div id="status" class="status" role="status" aria-live="polite">Esperando sucursal y escaneo...</div>
-
       <div class="last">Último registro: <span id="last">—</span></div>
     </div>
   </div>
 
 <script>
-/* === CONFIG === */
-const API_URL = "https://script.google.com/macros/s/AKfycbwfe0e0QixDlRqbrlYtvhuqvlvYSuxRZGeSWXxsyZp1Ek0DzTbr2HxZ7EfOZRX9LT1f/exec";
+/* ----- CONFIG: pon aquí tu WebApp URL ----- */
+const API_URL = "https://script.google.com/macros/s/AKfycbxOAJabpK4DwKD3lZ2RqZLJfLJDBMUrRh1LUzreQIxN5LSNsOc7_iNIxRaMAgTNY0oE/exec";
 
-/* === SCANNER DETECTION === */
-const PREFIX = '';
-const SUFFIX = '\n';
-const MAX_INTERVAL = 60;    // ms entre pulsaciones para considerar "scanner"
-let buffer = '';
-let lastTime = 0;
-let busy = false;
+/* Scanner detection */
+const MAX_INTERVAL = 60;
+let buffer = '', lastTime = 0, busy = false;
+let scanningEnabled = false;
 
 const card = document.getElementById('card');
 const statusEl = document.getElementById('status');
@@ -96,67 +87,93 @@ const otraWrapper = document.getElementById('otraWrapper');
 const otraInput = document.getElementById('otraInput');
 const focusField = document.getElementById('focusField');
 
-function doFocus(){
+/* --- NUEVA FUNCIÓN: enmascara el DNI para mostrar solo los 4 últimos dígitos --- */
+function maskDNI(dni){
+  if(!dni) return '';
+  const s = String(dni);
+  const last4 = s.slice(-4);
+  return '####' + last4; // muestra "####1234"
+}
+
+/* Helpers */
+function isUserTyping() {
+  const a = document.activeElement;
+  if (!a) return false;
+  const tag = a.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || a.isContentEditable;
+}
+function doFocusIfAllowed(){
+  if (!scanningEnabled) return;
+  if (isUserTyping()) return;
   try { focusField.focus({preventScroll:true}); } catch(e){}
 }
-window.addEventListener('click', doFocus);
-doFocus();
-// refocus periódico por si el navegador pierde foco
-setInterval(doFocus, 1200);
 
+/* Activación automática al elegir sucursal */
 sucursalSelect.addEventListener('change', () => {
   if (sucursalSelect.value === 'Otra') {
     otraWrapper.style.display = 'inline-block';
     otraInput.focus();
-  } else {
-    otraWrapper.style.display = 'none';
+    scanningEnabled = false;
     statusEl.className = 'status';
-    statusEl.textContent = `Sucursal seleccionada: ${sucursalSelect.value || '—'}. Esperando escaneo...`;
+    statusEl.textContent = 'Escribe la sucursal y pulsa ENTER o sal del campo para activar escaneo.';
+    return;
+  }
+  otraWrapper.style.display = 'none';
+  scanningEnabled = true;
+  statusEl.className = 'status';
+  statusEl.textContent = `Sucursal seleccionada: ${sucursalSelect.value}. Escaneo activo — espera DNI.`;
+  doFocusIfAllowed();
+});
+
+/* Si el usuario termina de escribir la sucursal "Otra": activar al blur o Enter */
+otraInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (otraInput.value && otraInput.value.trim()) {
+      scanningEnabled = true;
+      statusEl.className = 'status';
+      statusEl.textContent = `Sucursal seleccionada: ${otraInput.value.trim()}. Escaneo activo — espera DNI.`;
+      doFocusIfAllowed();
+    } else {
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Escribe la sucursal antes de presionar ENTER.';
+    }
+  }
+});
+otraInput.addEventListener('blur', () => {
+  if (otraInput.value && otraInput.value.trim()) {
+    scanningEnabled = true;
+    statusEl.className = 'status';
+    statusEl.textContent = `Sucursal seleccionada: ${otraInput.value.trim()}. Escaneo activo — espera DNI.`;
+    doFocusIfAllowed();
   }
 });
 
-/* Captura de teclado global (funciona con lectores que emulan teclado). */
+/* keyboard receiver */
 window.addEventListener('keydown', (e) => {
-  if (busy) return; // bloquea si ya estamos procesando
+  if (!scanningEnabled) return;
+  if (busy) return;
   const now = performance.now();
   const key = e.key;
-
   if (key.length > 1 && key !== 'Enter') return;
-
-  if (!buffer && PREFIX && key === PREFIX) {
-    buffer = '';
-    lastTime = now;
-    e.preventDefault(); return;
-  }
-
-  const dt = now - lastTime;
-  lastTime = now;
+  const dt = now - lastTime; lastTime = now;
   if (dt > MAX_INTERVAL && buffer.length > 0) buffer = '';
 
   if (key === 'Enter') {
     const raw = buffer;
     buffer = '';
-    if (raw) {
-      const clean = raw.replace(PREFIX, '').trim();
-      if (clean.length) processScan(clean);
-    }
+    if (raw) processScan(raw.trim());
     e.preventDefault();
     return;
   }
 
   if (/^[0-9]$/.test(key)) {
     buffer += key;
-    // opcional: si esperas siempre 8 dígitos y no hay ENTER, podrías auto-disparar
-    if (buffer.length >= 8 && !SUFFIX) {
-      const clean = buffer.replace(PREFIX, '').trim();
-      buffer = '';
-      if (clean.length) processScan(clean);
-    }
     e.preventDefault();
   }
 });
 
-/* Procesa solo si sucursal seleccionada y formato válido */
+/* Procesar y enviar */
 function processScan(dni) {
   const sucursal = (sucursalSelect.value === 'Otra') ? (otraInput.value || '').trim() : sucursalSelect.value;
   if (!sucursal) {
@@ -169,50 +186,73 @@ function processScan(dni) {
     statusEl.textContent = `DNI inválido: "${dni}". Intenta de nuevo.`;
     return;
   }
+
   busy = true;
   card.classList.add('busy');
-  statusEl.textContent = `Escaneado: ${dni} — enviando a ${sucursal}...`;
-  sendToBackendForm(dni, sucursal).finally(()=>{ busy=false; card.classList.remove('busy'); doFocus(); });
+  statusEl.className = 'status';
+  // AHORA mostramos el DNI enmascarado mientras enviamos:
+  statusEl.textContent = `Escaneado: ${maskDNI(dni)} — enviando a ${sucursal}...`;
+
+  sendWithFallback(dni, sucursal)
+    .then(result => {
+      if (result && result.ok) {
+        statusEl.className = 'status ok';
+        // mostramos en la caja el DNI enmascarado
+        statusEl.innerHTML = `Registrado: <strong>${maskDNI(dni)}</strong> → <strong>${sucursal}</strong><br><small>${result.timestamp || ''}</small>`;
+        lastEl.textContent = `${maskDNI(dni)} · ${sucursal} - ${result.timestamp || new Date().toLocaleString()}`;
+      } else if (typeof result === 'string') {
+        statusEl.className = 'status ok';
+        statusEl.innerHTML = `Registrado: <strong>${maskDNI(dni)}</strong> → <strong>${sucursal}</strong><br><small>${result}</small>`;
+        lastEl.textContent = `${maskDNI(dni)} · ${sucursal} - ${new Date().toLocaleString()}`;
+      } else {
+        statusEl.className = 'status err';
+        statusEl.textContent = `Error backend: ${result && result.error ? result.error : 'no se registró'}`;
+      }
+    })
+    .catch(err => {
+      console.error('Final error:', err);
+      statusEl.className = 'status err';
+      statusEl.textContent = 'Error de conexión al validar. Comprueba la URL del WebApp y permisos (deploy).';
+    })
+    .finally(()=> {
+      busy = false;
+      card.classList.remove('busy');
+      doFocusIfAllowed();
+    });
 }
 
-/* Enviamos como x-www-form-urlencoded (evita problemas CORS con preflight) */
-async function sendToBackendForm(dni, sucursal) {
+/* Envío: JSON con fallback a form-urlencoded */
+async function sendWithFallback(dni, sucursal) {
   try {
-    const body = `dni=${encodeURIComponent(dni)}&sucursal=${encodeURIComponent(sucursal)}`;
-
-    const res = await fetch(API_URL, {
+    const payload = { dni: String(dni), sucursal: String(sucursal) };
+    const r = await fetch(API_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-      body
+      headers: { 'Content-Type': 'application/json', 'Accept':'application/json' },
+      body: JSON.stringify(payload)
     });
-
-    const ct = res.headers.get('content-type') || '';
-    if (ct.indexOf('application/json') !== -1) {
-      const json = await res.json();
-      if (json && json.ok) {
-        statusEl.className = 'status ok';
-        statusEl.innerHTML = `Registrado: <strong>${dni}</strong> → <strong>${sucursal}</strong><br><small>${json.timestamp || ''}</small>`;
-        lastEl.textContent = `${dni} · ${sucursal} - ${json.timestamp || new Date().toLocaleString()}`;
-      } else {
-        statusEl.className = 'status err';
-        statusEl.textContent = `Error backend: ${json && json.error ? json.error : 'no se registró'}`;
-      }
-    } else {
-      // si el backend devuelve texto plano como "Registro exitoso"
-      const text = await res.text();
-      if (res.ok) {
-        statusEl.className = 'status ok';
-        statusEl.innerHTML = `Registrado: <strong>${dni}</strong> → <strong>${sucursal}</strong><br><small>${text}</small>`;
-        lastEl.textContent = `${dni} · ${sucursal} - ${new Date().toLocaleString()}`;
-      } else {
-        statusEl.className = 'status err';
-        statusEl.textContent = `Error servidor: ${text || res.statusText}`;
-      }
-    }
+    const ct = r.headers.get('content-type') || '';
+    if (ct.indexOf('application/json') !== -1) return await r.json();
+    const txt = await r.text();
+    if (r.ok) return txt;
+    throw new Error('Server returned non-OK for JSON send: ' + txt);
   } catch (err) {
-    statusEl.className = 'status err';
-    statusEl.textContent = 'Error de conexión al validar. Comprueba la URL del WebApp y permisos.';
-    console.error('Fetch error:', err);
+    console.warn('JSON send failed (trying form-urlencoded):', err);
+    try {
+      const body = `dni=${encodeURIComponent(dni)}&sucursal=${encodeURIComponent(sucursal)}`;
+      const r2 = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: body
+      });
+      const ct2 = r2.headers.get('content-type') || '';
+      if (ct2.indexOf('application/json') !== -1) return await r2.json();
+      const txt2 = await r2.text();
+      if (r2.ok) return txt2;
+      throw new Error('Server returned non-OK for form send: ' + txt2);
+    } catch (err2) {
+      console.error('Form-urlencoded send also failed:', err2);
+      throw err2;
+    }
   }
 }
 </script>
